@@ -1,0 +1,69 @@
+*.lo
+*.o
+*.swp
+.ropeproject
+__pycache__
+/Makefile
+/Makefile.in
+/aclocal.m4
+/autom4te.cache/
+/build/
+/compile
+/config.guess
+/config.h
+/config.h.in
+/config.log
+/config.status
+/config.sub
+/configure
+/depcomp
+/doc/html
+/install-sh
+/libtool
+/libunibreak.pc
+/ltmain.sh
+/m4/
+/missing
+/src/.deps/
+/src/.libs/
+/src/Debug/
+/src/DebugDir/
+/src/GraphemeBreakProperty.txt
+/src/LineBreak.txt
+/src/Makefile
+/src/Makefile.in
+/src/Release/
+/src/ReleaseDir/
+/src/WordBreakProperty.txt
+/src/emoji-data.txt
+/src/filter_dup
+/src/libunibreak.la
+/src/tests
+/stamp-h1
+tags
+
+# Fork additions. Everything above is upstream's own ignore list, kept intact
+# and unedited, in its original order. No pattern above swallows a Zig path:
+# `/build/` is anchored at this root and names a directory that does not exist
+# here, so it does not match `build.zig` or `consumer/build.zig`; `/src/tests`
+# names the binary upstream's own makefile writes into `src/`, which this build
+# never does, because it puts every artifact in the cache tree; and upstream
+# lists neither dot-directories nor subdirectories wholesale.
+#
+# `zig build` creates these directories at the repository root. They are build
+# products, so they stay out of commits, and neither appears in the `.paths`
+# allowlist in build.zig.zon, so an ordinary user build cannot change the
+# package hash.
+.zig-cache/
+zig-cache/
+zig-out/
+zig-pkg/
+
+# `consumer/` is a package in its own right: `zig build run` inside it creates
+# its own output tree. It is listed here so that a run from the repository root
+# cannot be committed by accident. An operator who redirects the cache with
+# --cache-dir owns that path instead.
+consumer/.zig-cache/
+consumer/zig-cache/
+consumer/zig-out/
+consumer/zig-pkg/

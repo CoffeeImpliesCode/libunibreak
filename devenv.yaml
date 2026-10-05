@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+#
+# The development shell's nixpkgs, pinned by revision rather than followed by
+# branch. `devenv.lock` is generated and owned by the driver; this file states
+# which revision it wants, so the lock records that revision instead of whatever
+# a branch pointed at on the day it was written.
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/c2f38fe7f9e04d9aadd354d380f2bd40531d9737
+
+# Nothing here is unfree and nothing here is unsupported: the shell holds the
+# Zig 0.16.0 toolchain and pkg-config, and it builds libunibreak from source.
+allowUnfree: false
+allowUnsupportedSystem: false

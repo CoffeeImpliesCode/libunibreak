@@ -1,0 +1,208 @@
+.{
+    // The package id and the name a dependent writes in its dependency map.
+    .name = .libunibreak,
+    // Upstream's own version, in the three-part form Zig's manifest requires:
+    // `configure.ac`'s `AC_INIT([libunibreak],[8.0],[wuyongwei@gmail.com])` and
+    // `src/unibreakbase.h`'s `#define UNIBREAK_VERSION 0x0800` are both the
+    // library's version 8.0, and `libunibreak.pc.in` fills its `Version:` field
+    // from that same `@VERSION@`. This is the version of the C library this
+    // package builds, not a version of the Zig wrapper.
+    .version = "8.0.0",
+    // The package identity for `.libunibreak`, fixed by this workspace's
+    // contract for this fork. It is not derived from any upstream Zig package:
+    // upstream ships no Zig package, so there is none to be a fork of.
+    .fingerprint = 0xb4b2629221124f29, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    // Nothing is fetched. The C library is this repository's own source, all
+    // seven generated Unicode tables are checked in, and the facade, tests and
+    // example import only what is compiled here. `build.zig` compiles the nine
+    // translation units of `src/Makefile.am`'s `libunibreak_la_SOURCES`
+    // directly; no autotools, Make, CMake or configure script is executed and
+    // nothing is downloaded at build time.
+    .dependencies = .{},
+    .paths = .{
+        // The build graph, this manifest, and the matrix driver's settings
+        // profile. The profile is configuration, not prose: it is a Bash file
+        // `cross-test` sources when it is run from this package root, so it
+        // travels with the package for anyone reproducing the run and has to
+        // be inside `.paths` or a fetched copy of the package would silently
+        // fall back to the harness defaults.
+        "build.zig",
+        "build.zig.zon",
+        "cross-test.profile.sh",
+        // The fork's own Zig-facing source: the facade root, the wrapper header
+        // that names the five public headers for translate-c, and the explicit
+        // exercise of every public facade method.
+        "zig",
+        // The runtime-loading route, which the API role owns: `runtime/graph.zig`
+        // is what `build.zig` substitutes for `translate.createModule()` under
+        // `-Druntime=true`, so it is a build dependency of the default graph
+        // and not only of the runtime one. It is one directory because the
+        // loader core, its generated dispatch and the descriptor that binds them
+        // are interlocked files that have to travel together.
+        "runtime",
+        // The root test and smoke roots.
+        "tests.zig",
+        "smoke.zig",
+        // Upstream's tree, carried whole and unmodified. `src` is one entry
+        // because it is one directory of interlocked files: the nine core
+        // translation units, the five public and six internal headers, the
+        // seven generated Unicode tables (six of which are textually included
+        // by a core translation unit rather than compiled on their own), the
+        // three Unicode conformance fixtures the tests and the API role read in
+        // place with `@embedFile`, upstream's own `src/tests.c` harness and its
+        // `test_skips.h`, the generators and templates that are the provenance
+        // of those tables, and upstream's `Makefile.am`, `Makefile.gcc` and
+        // `Makefile.msvc`. A hand-picked file list would be a second, quieter
+        // claim about what the library is; the whole directory is upstream's.
+        "src",
+        // Upstream's design documentation, including `doc/architecture.md`.
+        // Two of its claims are stale against the 8.0 source - the MSVC `bool`
+        // fallback and the `linebreakdata.c` inclusion row - and the record of
+        // that belongs in this fork's own documentation, not in an edit to
+        // upstream's file.
+        "doc",
+        // Upstream's own build files, its licence, the two upstream dotfiles
+        // that are bytes of this pin rather than of this fork, and the text
+        // that states what the library is.
+        //
+        // `.clang-format` and `.mailmap` are here because they are upstream
+        // bytes recorded in this fork's `UPSTREAM.sha256`, and a fetched
+        // package that lacked them would fail that record for a reason that
+        // has nothing to do with the library. `.clang-format` is also the
+        // formatting convention this fork must not violate.
+        //
+        // `LICENCE` keeps the British spelling and is upstream's Zlib grant
+        // verbatim. `LICENCE-UNICODE.txt` is the carried primary text of the
+        // Unicode terms that govern the seven generated tables and the three
+        // fixtures; it is named here because the tables are inside the archive
+        // this package builds. Which file falls under which term, and the
+        // per-file exceptions upstream ships, are `NOTICE.md`'s record.
+        ".clang-format",
+        ".mailmap",
+        "LICENCE",
+        "LICENCE-UNICODE.txt",
+        "README.md",
+        // Upstream's own README, byte for byte, under the name this repository
+        // preserves it under. `zig build` installs it beside `LICENCE` and
+        // `LICENCE-UNICODE.txt`, so a fetched copy that lacked it would fail to
+        // install rather than quietly ship a package without the document that
+        // states what the library is.
+        "README.upstream.md",
+        "NEWS",
+        "AUTHORS",
+        "Makefile.am",
+        "configure.ac",
+        "autogen.sh",
+        "bootstrap",
+        "purge",
+        "libunibreak.pc.in",
+        "Doxyfile",
+        // This fork's own records.
+        "UPSTREAM.md",
+        "UPSTREAM.sha256",
+        "NOTICE.md",
+        "README.zig.md",
+        "FORK-NOTES.md",
+        "CHANGELOG.md",
+        // The grant over the files this fork writes, carried because the
+        // install step reads it rather than because a record is a nice thing
+        // to ship: `build.zig`'s `b.installFile("FORK-LICENSE.md", ...)` in
+        // `build` puts it at `share/licenses/libunibreak/FORK-LICENSE.md`, and
+        // `package.nix`'s install check asserts that path by name. A fetched
+        // copy without it fails `zig build install` on a file this tree has
+        // always had, and a fork that installs its per-file audit but not the
+        // grant over its own additions would be the same defect `CHANGELOG.md`
+        // entry 25 records, in packaging form.
+        "FORK-LICENSE.md",
+        // This fork's own verification workflow. Upstream ships no CI at this
+        // pin - there is no `.github/` directory in the tree - so this file is
+        // entirely fork-authored and there is no upstream workflow it retargets
+        // or excludes. It runs gates on a runner; it publishes nothing.
+        ".github/workflows/verify.yml",
+        // The separate consumer package: proof that the published module
+        // resolves from a package that did not write it, through a relative
+        // path rather than a fetch.
+        //
+        // Its three files, named one by one, and not the `consumer` directory.
+        // `zig build consumer` runs a second `zig build` whose working
+        // directory is `consumer/` (`build.zig`'s `runConsumer`, through its
+        // `run.setCwd(b.path("consumer"))`), and it passes `--cache-dir` only
+        // when the caller supplied one (`if (b.cache_root.path)` in the same
+        // function), so a plain `zig build consumer` resolves that nested
+        // build's local cache at `consumer/.zig-cache`, and its install prefix
+        // at `consumer/zig-out` unless a caller-named `--prefix` travels with
+        // it. Listing the directory would carry that debris into every fetched
+        // copy and make the package hash change as a side effect of running
+        // the package's own gate. Naming the three files is what makes the
+        // allowlist true regardless of what a build has left behind, and it
+        // needs no `.exclude`: an exclusion list names paths that are not in
+        // the package, which is not the same statement as naming the paths
+        // that are.
+        "consumer/build.zig",
+        "consumer/build.zig.zon",
+        "consumer/src/main.zig",
+        // `tools/` is carried because the install step reads one file out of
+        // it: `build.zig`'s
+        // `b.installFile("tools/test.txt", "share/libunibreak/test.txt")` in
+        // `build` ships upstream's sample input beside the three conformance
+        // fixtures, and `package.nix` expects it there. A fetched copy that
+        // did not carry it would fail `zig build install` on a file this tree
+        // has always had, which is a different defect from carrying the file
+        // and is not fixed by omitting the install step.
+        //
+        // The directory is named whole rather than as the one file the install
+        // reads. `test.txt` is the sample input for the six programs beside it,
+        // upstream's own `Makefile.am:12` distributes the directory as a unit,
+        // and picking one file out of it would be the second, quieter claim
+        // about what the library is that the `src` entry above refuses to
+        // make. Carrying the bytes is not a claim that they build: this package
+        // compiles none of the six, because `tools/linebreak_test.c:20` reaches
+        // outside the standard headers for `<iconv.h>` and because
+        // `core_sources` names its nine translation units instead of globbing.
+        // That reasoning is unchanged; only the delivery of the bytes is.
+        // The decision that reversed the earlier one, and the record that has
+        // to be repointed with it, are `CHANGELOG.md` entry 31 and
+        // `FORK-NOTES.md` §27.
+        "tools",
+        // The Nix and devenv entry points this package advertises, and the
+        // flake lock that exists in this tree. A package whose README says
+        // `nix build .#static` and `devenv tasks run sdk:gate` has to carry the
+        // files those commands read, or the advertisement belongs to the
+        // checkout and not to the package a dependent receives — and the
+        // reproducible half of it is the lock, which records the inputs the
+        // flake resolved.
+        //
+        // Named one by one rather than as a directory, because `devenv.lock`
+        // does not exist in this tree and a `.paths` entry that is not there
+        // fails the fetch that reads it. The absent lock is absent here too,
+        // and no empty file stands in for it.
+        //
+        // A Nix derivation filters its own source instead of listing it, and
+        // may exclude lock files from the build source it hands to the
+        // derivation after the flake frontend has resolved the locked inputs.
+        // That is a different axis from what a Zig package carries, and the two
+        // statements do not contradict each other: one is what this package
+        // publishes, the other is what the sandbox sees.
+        "package.nix",
+        "flake.nix",
+        "flake.lock",
+        "devenv.nix",
+        "devenv.yaml",
+        ".envrc",
+        //
+        // `.gitignore` is deliberately absent, and for a different reason from
+        // anything else on this list: upstream's 43 lines are kept verbatim and
+        // this fork appends its own Zig block, so the working-tree file is not
+        // upstream's bytes. A fetched copy therefore carries no ignore rules at
+        // all, which is why this list has to be complete on its own. That
+        // decision is recorded in `UPSTREAM.md`, and its exclusion from
+        // `UPSTREAM.sha256` is stated in that record's own header.
+        //
+        // `.zig-cache/`, `zig-out/`, `zig-pkg/` and `.git/` are absent for a
+        // stronger reason than being unlisted: no entry above names a
+        // directory that a build writes into except `consumer`, and that one is
+        // listed as its three files, so build debris has no path into the
+        // package even while a build is writing it.
+    },
+}
