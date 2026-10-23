@@ -323,7 +323,7 @@ pub const Line = struct {
     pub fn breakBetween(first: CodePoint, second: CodePoint, lang: ?Language) Error!LineOpcode {
         _ = try countUtf32(&.{ first, second });
         const raw = c.is_line_breakable(first, second, languagePointer(lang));
-        return @enumFromInt(@as(u8, @truncate(@as(u32, @bitCast(raw)))));
+        return @fromBackingInt(@intCast(@as(u8, @truncate(@as(u32, @bitCast(raw))))));
     }
 };
 

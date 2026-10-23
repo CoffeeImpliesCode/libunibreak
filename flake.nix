@@ -3,7 +3,7 @@
 {
   description = "libunibreak: Unicode line, word and grapheme breaking (UAX #14, UAX #29)";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/c7def046b9a883d46974757852106483d741586f";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/02c087f3fe673c9e317f206a627cb6b910336dbe";
 
   outputs =
     { nixpkgs, ... }:
@@ -22,7 +22,7 @@
         pkgs:
         linkage:
         pkgs.callPackage ./package.nix {
-          zig = pkgs.zig_0_16;
+          zig = pkgs.zig_0_17;
           inherit linkage;
         };
     in
@@ -38,8 +38,8 @@
           # Require the Zig version declared by the package manifest.
           packages = [
             (
-              assert pkgs.zig_0_16.version == "0.16.0";
-              pkgs.zig_0_16
+              assert pkgs.zig_0_17.version == "0.17.0";
+              pkgs.zig_0_17
             )
             pkgs.pkg-config
           ];

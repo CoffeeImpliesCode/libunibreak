@@ -9,8 +9,8 @@
   optimize ? "ReleaseFast",
 }:
 
-assert lib.assertMsg (zig.version == "0.16.0")
-  "libunibreak builds with Zig 0.16.0; got zig ${zig.version}";
+assert lib.assertMsg (zig.version == "0.17.0")
+  "libunibreak builds with Zig 0.17.0; got zig ${zig.version}";
 assert lib.assertMsg (linkage == "static" || linkage == "dynamic")
   "linkage must be static or dynamic";
 
@@ -112,7 +112,7 @@ stdenv.mkDerivation (finalAttrs: {
       "Unicode line breaking (UAX #14), word breaking and grapheme cluster breaking (UAX #29), Unicode 17.0.0";
     longDescription = ''
       libunibreak 8.0 by Wu Yongwei and contributors, compiled from this
-      repository's pinned source with Zig 0.16.0. Seven of the nine compiled
+      repository's pinned source with Zig 0.17.0. Seven of the nine compiled
       translation units, or their textual includes, are generated Unicode
       Character Database tables, so this output carries upstream's zlib grant
       and the Unicode terms over that data. See

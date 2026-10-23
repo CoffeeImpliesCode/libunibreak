@@ -232,8 +232,8 @@ pub fn exerciseRaw() Failure!void {
     var brk8: [8]u8 = undefined;
     c.set_linebreaks_utf8(combining_text.ptr, combining_text.len, null, &brk8);
     // Compare raw `char` output with the typed opcode value.
-    try expectEqual(@as(u8, @intFromEnum(libunibreak.LineOpcode.no_break)), brk8[0]);
-    try expectEqual(@as(u8, @intFromEnum(libunibreak.LineOpcode.inside_char)), brk8[1]);
+    try expectEqual(@as(u8, @backingInt(libunibreak.LineOpcode.no_break)), brk8[0]);
+    try expectEqual(@as(u8, @backingInt(libunibreak.LineOpcode.inside_char)), brk8[1]);
 
     var brk16: [8]u8 = undefined;
     c.set_linebreaks_utf16(&combining_16, combining_16.len, null, &brk16);
@@ -250,16 +250,16 @@ pub fn exerciseRaw() Failure!void {
     try expectEqual(@as(usize, 2), filled16);
 
     const raw_between: c_int = c.is_line_breakable(0x0061, 0x0301, null);
-    try expectEqual(@as(u8, @intFromEnum(libunibreak.LineOpcode.no_break)), @as(u8, @truncate(@as(u32, @bitCast(raw_between)))));
+    try expectEqual(@as(u8, @backingInt(libunibreak.LineOpcode.no_break)), @as(u8, @truncate(@as(u32, @bitCast(raw_between)))));
 
     // Check comma grouping and multibyte continuation markers.
     var word8: [8]u8 = undefined;
     c.set_wordbreaks_utf8(number_text.ptr, number_text.len, null, &word8);
-    try expectEqual(@as(u8, @intFromEnum(libunibreak.WordOpcode.no_break)), word8[0]);
-    try expectEqual(@as(u8, @intFromEnum(libunibreak.WordOpcode.no_break)), word8[1]);
+    try expectEqual(@as(u8, @backingInt(libunibreak.WordOpcode.no_break)), word8[0]);
+    try expectEqual(@as(u8, @backingInt(libunibreak.WordOpcode.no_break)), word8[1]);
     var word_combining: [8]u8 = undefined;
     c.set_wordbreaks_utf8(combining_text.ptr, combining_text.len, null, &word_combining);
-    try expectEqual(@as(u8, @intFromEnum(libunibreak.WordOpcode.inside_char)), word_combining[1]);
+    try expectEqual(@as(u8, @backingInt(libunibreak.WordOpcode.inside_char)), word_combining[1]);
     var word16: [8]u8 = undefined;
     c.set_wordbreaks_utf16(&combining_16, combining_16.len, null, &word16);
     var word32: [8]u8 = undefined;
@@ -276,7 +276,7 @@ pub fn exerciseRaw() Failure!void {
     const strict: [*:0]const u8 = "-strict";
     var tailored: [8]u8 = undefined;
     c.set_linebreaks_utf32(&line_32, line_32.len, strict, &tailored);
-    try expectEqual(@as(u8, @intFromEnum(libunibreak.LineOpcode.no_break)), tailored[0]);
+    try expectEqual(@as(u8, @backingInt(libunibreak.LineOpcode.no_break)), tailored[0]);
 }
 
 pub fn main(init: std.process.Init) !void {

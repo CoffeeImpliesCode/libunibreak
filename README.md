@@ -1,6 +1,6 @@
 # libunibreak
 
-A Zig 0.16.0 package for upstream libunibreak 8.0, with a typed Zig facade over its C library.
+A Zig 0.17.0 package for upstream libunibreak 8.0, with a typed Zig facade over its C library.
 The bundled Unicode data is version 17.0.0.
 
 ## Source deviations from upstream
@@ -22,7 +22,7 @@ Nix uses the same Zig build graph. The flake declares static and shared outputs;
 | Route | Targets | Coverage |
 |---|---|---|
 | `zig build check` | `x86_64-linux-gnu`, `aarch64-linux-gnu`, `aarch64-macos-none`, `x86_64-windows-gnu`, `riscv64-linux-gnu`, `wasm32-wasi` | Compile-only; no binaries run. |
-| `cross-test` | Zig 0.16 Tier 1/2 table (53 platforms) | Uses the static, linked test graph. Runs where an executor is available; otherwise reports build-only. |
+| `cross-test` | 53-target profile | Uses the static, linked test graph. Runs where an executor is available; otherwise reports build-only. |
 | Shared linkage | Targets with a dynamic linker | `wasm32-wasi` has no dynamic linker and is refused for `-Dlinkage=dynamic`; static linkage remains available. |
 | Nix flake | `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin` | Declares static and shared packages. |
 

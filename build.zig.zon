@@ -3,7 +3,7 @@
     // Upstream C library release.
     .version = "8.0.0",
     .fingerprint = 0xb4b2629221124f29, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{},
     .paths = .{
         // Build scripts and the cross-test profile.

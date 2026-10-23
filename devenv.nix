@@ -10,7 +10,7 @@
 }:
 
 let
-  zig = pkgs.zig_0_16;
+  zig = pkgs.zig_0_17;
   sdk = linkage: pkgs.callPackage ./package.nix { inherit zig linkage; };
 
   # Resolve the checkout path without copying it into the Nix store.
@@ -168,9 +168,9 @@ in
 
   assertions = [
     {
-      assertion = lib.assertMsg (zig.version == "0.16.0")
-        "libunibreak needs Zig 0.16.0; devenv resolved ${zig.version}";
-      message = "libunibreak needs Zig 0.16.0.";
+      assertion = lib.assertMsg (zig.version == "0.17.0")
+        "libunibreak needs Zig 0.17.0; devenv resolved ${zig.version}";
+      message = "libunibreak needs Zig 0.17.0.";
     }
   ];
 }

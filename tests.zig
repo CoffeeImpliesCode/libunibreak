@@ -487,7 +487,7 @@ test "per-unit opcodes follow completed UTF-8 and UTF-16 code points" {
 test "empty input writes nothing at all" {
     try loadProvider();
     // Upstream indexes `posNext - 1` even for empty grapheme input.
-    const untouched_line = [_]libunibreak.LineOpcode{.inside_char} ** 4;
+    const untouched_line: [4]libunibreak.LineOpcode = @splat(.inside_char);
 
     var line_out: [4]libunibreak.LineOpcode = undefined;
     @memcpy(&line_out, &untouched_line);
@@ -504,13 +504,13 @@ test "empty input writes nothing at all" {
     try libunibreak.Line.perCodeUnit32(&[_]u32{}, null, &line_out32);
     try std.testing.expectEqualSlices(libunibreak.LineOpcode, &untouched_line, &line_out32);
 
-    const untouched_word = [_]libunibreak.WordOpcode{.inside_char} ** 4;
+    const untouched_word: [4]libunibreak.WordOpcode = @splat(.inside_char);
     var word_out: [4]libunibreak.WordOpcode = undefined;
     @memcpy(&word_out, &untouched_word);
     try libunibreak.Word.perCodeUnit("", &word_out);
     try std.testing.expectEqualSlices(libunibreak.WordOpcode, &untouched_word, &word_out);
 
-    const untouched_grapheme = [_]libunibreak.GraphemeOpcode{.inside_char} ** 6;
+    const untouched_grapheme: [6]libunibreak.GraphemeOpcode = @splat(.inside_char);
     var grapheme_out = untouched_grapheme;
     try libunibreak.Grapheme.perCodeUnit("", grapheme_out[1..5]);
     try std.testing.expectEqualSlices(libunibreak.GraphemeOpcode, &untouched_grapheme, &grapheme_out);
@@ -627,7 +627,8 @@ test "an output buffer one entry short is refused, and nothing is written" {
     var out: [4]libunibreak.LineOpcode = undefined;
     @memset(&out, libunibreak.LineOpcode.must_break);
     try std.testing.expectError(error.OutputTooSmall, libunibreak.Line.perCodeUnit(text, null, out[0..3]));
-    try std.testing.expectEqualSlices(libunibreak.LineOpcode, &[_]libunibreak.LineOpcode{.must_break} ** 4, &out);
+    const expected_line: [4]libunibreak.LineOpcode = @splat(.must_break);
+    try std.testing.expectEqualSlices(libunibreak.LineOpcode, &expected_line, &out);
     try libunibreak.Line.perCodeUnit(text, null, &out);
 
     // Capacity is measured in UTF-16 code units.
@@ -635,12 +636,14 @@ test "an output buffer one entry short is refused, and nothing is written" {
     var out16: [3]libunibreak.WordOpcode = undefined;
     @memset(&out16, libunibreak.WordOpcode.no_break);
     try std.testing.expectError(error.OutputTooSmall, libunibreak.Word.perCodeUnit16(&units, out16[0..2]));
-    try std.testing.expectEqualSlices(libunibreak.WordOpcode, &[_]libunibreak.WordOpcode{.no_break} ** 3, &out16);
+    const expected_word: [3]libunibreak.WordOpcode = @splat(.no_break);
+    try std.testing.expectEqualSlices(libunibreak.WordOpcode, &expected_word, &out16);
 
     var out32: [2]libunibreak.GraphemeOpcode = undefined;
     @memset(&out32, libunibreak.GraphemeOpcode.no_break);
     try std.testing.expectError(error.OutputTooSmall, libunibreak.Grapheme.perCodeUnit32(&[_]u32{ 0x0061, 0x0062, 0x0063 }, &out32));
-    try std.testing.expectEqualSlices(libunibreak.GraphemeOpcode, &[_]libunibreak.GraphemeOpcode{.no_break} ** 2, &out32);
+    const expected_grapheme: [2]libunibreak.GraphemeOpcode = @splat(.no_break);
+    try std.testing.expectEqualSlices(libunibreak.GraphemeOpcode, &expected_grapheme, &out32);
 
     // Per-code-point output needs two entries for either sample.
     var points: [2]libunibreak.LineOpcode = undefined;
@@ -693,7 +696,7 @@ test "malformed UTF-8 is refused in every shape, and nothing is written" {
         .{ .name = "truncated four-byte", .bytes = "\xF0\x9F\x98" },
     };
 
-    const clean = [_]libunibreak.LineOpcode{.must_break} ** 8;
+    const clean: [8]libunibreak.LineOpcode = @splat(.must_break);
     for (cases) |case| {
         var out: [8]libunibreak.LineOpcode = undefined;
         @memcpy(&out, &clean);
@@ -735,7 +738,7 @@ test "malformed UTF-16 is refused in every shape, and nothing is written" {
         &[_]u16{ 0xDC00, 0x0061 },
     };
 
-    const clean = [_]libunibreak.LineOpcode{.must_break} ** 4;
+    const clean: [4]libunibreak.LineOpcode = @splat(.must_break);
     for (cases) |case| {
         var out: [4]libunibreak.LineOpcode = undefined;
         @memcpy(&out, &clean);
@@ -762,7 +765,7 @@ test "malformed UTF-16 is refused in every shape, and nothing is written" {
 
 test "malformed UTF-32 is refused in every shape, and nothing is written" {
     try loadProvider();
-    const clean = [_]libunibreak.LineOpcode{.must_break} ** 4;
+    const clean: [4]libunibreak.LineOpcode = @splat(.must_break);
     var out: [4]libunibreak.LineOpcode = undefined;
 
     @memcpy(&out, &clean);

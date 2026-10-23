@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const linkage = b.option(
-        std.builtin.LinkMode,
+        std.lang.LinkMode,
         "linkage",
         "Forwarded to the libunibreak dependency: which native delivery its " ++
             "module dispatches through. static (the default) or dynamic.",
@@ -40,8 +40,8 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     const run_exe = b.addRunArtifact(exe);
-    // `Step.Run` requires explicit forwarding for `--provider` arguments.
-    if (b.args) |args| run_exe.addArgs(args);
+    // Forward program arguments after `--`.
+    run_exe.addPassthruArgs();
     const run_step = b.step("run", "Build and run the consumer program");
     run_step.dependOn(&run_exe.step);
 }

@@ -2,8 +2,10 @@
 
 Fork changes relative to upstream libunibreak 8.0.
 
-- The consumer step installs targets without a compatible executor instead of trying to run them.
-- The nested consumer build forwards target, CPU, executor settings, caches, prefix and program arguments.
+- Port to Zig 0.17.0.
+- The consumer step installs non-native targets instead of running them because Zig 0.17 does not expose emulator settings during configuration.
+- The nested consumer build uses its package-local install prefix because Zig 0.17 exposes the parent prefix only as a make-time path.
+- The nested consumer build forwards target, CPU, linkage, runtime, cache environment and program arguments.
 - `Decode.utf32` preserves a stored `0xFFFFFFFF` code point and identifies end-of-input by index.
 - Typed grapheme methods skip the native call on empty input to avoid upstream's out-of-bounds write; the raw C API remains unchanged.
 - Added typed `Line`, `Word` and `Grapheme` APIs with caller-owned buffers, input validation and errors, alongside the translated C API.
