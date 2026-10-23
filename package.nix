@@ -1,14 +1,4 @@
-# libunibreak: one standalone source-only derivation.
-#
-# Both entry points call this: flake.nix for the package variants, devenv.nix
-# for `devenv build outputs.static` / `outputs.shared`. It returns ONE
-# derivation; `linkage` selects the artifact the build graph produces.
-#
-# The C is compiled by build.zig, never here: translation-unit list, C flags,
-# header configuration and the installation of the library, headers, licences
-# and pkg-config metadata all belong to the build graph, and this file restates
-# none of them. `src` is this directory, so nothing is fetched at build time.
-# "static" means a static library artifact, not a statically linked executable.
+# Shared source-only derivation; the flake and devenv use this package.
 
 {
   lib,
@@ -26,12 +16,10 @@ assert lib.assertMsg (linkage == "static" || linkage == "dynamic")
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "libunibreak";
-  # configure.ac AC_INIT([libunibreak],[8.0],…); src/unibreakbase.h
-  # UNIBREAK_VERSION 0x0800. The C library's version, not this packaging's.
+  # Upstream C library version.
   version = "8.0.0";
 
-  # Exclusion of build and tool state only. This is deliberately not a second
-  # allowlist: build.zig.zon `.paths` states what the package publishes.
+  # Exclude generated state; build.zig.zon defines the package paths.
   src = lib.cleanSourceWith {
     src = ./.;
     filter = path: _type:
@@ -52,28 +40,23 @@ stdenv.mkDerivation (finalAttrs: {
 
   strictDeps = true;
 
-  # The graph generates `libunibreak.pc`; pkg-config is the tool that resolves
-  # it, in postFixup and in the install check.
+  # pkg-config validates the generated metadata.
   nativeBuildInputs = [
     zig
     pkg-config
   ];
 
-  # installPhase below is the real one, so the configure and build phases must
-  # be disabled or the default install phase would build once more.
+  # Zig owns the build and install phases.
   dontConfigure = true;
   dontBuild = true;
   dontCheck = true;
-  # Without this the Zig setup hook substitutes its own `zig build test` for the
-  # check phase, which is a second, differently-flagged build of the same tree.
-  # `doInstallCheck` below is unaffected and still runs.
+  # Prevent the Zig hook from adding a second check build.
   dontUseZigCheck = true;
 
   installPhase = ''
     runHook preInstall
 
-    # Both Zig caches under the build directory: $TMPDIR is outside the
-    # unpacked source, and the build is not reproducible from a stale cache.
+    # Use fresh caches outside the source tree.
     export ZIG_GLOBAL_CACHE_DIR="$TMPDIR/zig-global-cache"
     export ZIG_LOCAL_CACHE_DIR="$TMPDIR/zig-local-cache"
 
@@ -87,9 +70,7 @@ stdenv.mkDerivation (finalAttrs: {
     runHook postInstall
   '';
 
-  # The build graph writes the pkg-config metadata. Find it where it put it
-  # rather than assuming a directory: the assertion that exists is the point,
-  # the path is the build graph's choice.
+  # Locate generated metadata for the install check.
   postFixup = ''
     pc_file=$(find "$out" -type f -name 'libunibreak.pc' | head -n1)
     test -n "$pc_file"
@@ -138,9 +119,7 @@ stdenv.mkDerivation (finalAttrs: {
       $out/share/licenses/libunibreak/NOTICE.md.
     '';
     homepage = "https://github.com/adah1972/libunibreak";
-    # Two terms: the code is upstream's Zlib text, the data inside the archive is
-    # Unicode's. NOTICE.md, installed with this output by the build graph, is
-    # the per-file inventory.
+    # Code and generated data carry separate terms; see NOTICE.md.
     license = "Zlib AND Unicode-3.0";
     licenseFile = "LICENCE";
     platforms = lib.platforms.unix;

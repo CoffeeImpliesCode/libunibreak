@@ -1,79 +1,17 @@
-//! Behaviour tests for the `libunibreak` package.
-//!
-//! The centrepiece is conformance. `src/LineBreakTest.txt`,
-//! `src/WordBreakTest.txt` and `src/GraphemeBreakTest.txt` are the three test
-//! files Unicode publishes with UAX #14 and UAX #29, shipped unmodified in the
-//! upstream checkout and used in place — there is no `testdata/` copy. **Every**
-//! data row of all three is replayed here, with no sampling and no skip list,
-//! and each test asserts the row count it reached, so a pass states that it
-//! covered the whole file rather than an error-free prefix. The expectations
-//! were produced by the Unicode consortium, not by this fork and not by
-//! libunibreak.
-//!
-//! What each row is checked against, and how:
-//!
-//!   * All three encodings independently. Every row is encoded to UTF-8, UTF-16
-//!     and UTF-32 by this harness and run through the native pass in all three,
-//!     so a decoder disagreement between them cannot pass unnoticed.
-//!   * Per-unit markers. Where a code point occupies more than one code unit,
-//!     every trailing unit must carry `insideChar` and only the leading unit
-//!     carries the real opcode. That is upstream's documented behaviour
-//!     (`src/linebreak.c:1461-1464`, `src/wordbreak.c:117-119`,
-//!     `src/graphemebreak.c:162`) and it is the part a facade most easily gets
-//!     wrong.
-//!   * Per-code-point line output. The two native per-code-point line entry
-//!     points (UTF-8 and UTF-16) are run as well, and the count each returns
-//!     must equal the code point count of the row.
-//!
-//! The line fixture is compared under `"-strict"`, the tailoring upstream's own
-//! harness uses (`src/tests.c:250`). The Unicode files cannot express "break
-//! allowed" as against "break mandatory", so for the oracle comparison only a
-//! break expectation accepts either `must_break` or `allow_break`. **That fold
-//! lives only in the fixture comparison.** The direct behaviour tests below
-//! assert `must_break` and `indeterminate` as the distinct values they are,
-//! which is what the typed API promises.
-//!
-//! The rest of this file covers what no fixture can reach: the empty input, the
-//! final-position distinction, the per-code-point count and the untouched tail,
-//! language tailoring and its prefix matching, the pair query, the fact that
-//! the word and grapheme vocabularies answer different questions about the same
-//! text, and every refusal this package makes — undersized output,
-//! input/output overlap, and malformed encoding in each of the three encodings,
-//! each checked to leave the output buffer exactly as the caller passed it.
-//!
-//! This file is the test root. Because it sits at the package root, its module
-//! root directory is the package directory, which is what lets `@embedFile`
-//! reach `src/`.
-//!
-//! ## The provider, in a runtime-loading build
-//!
-//! Nothing native is linked into the module under `-Druntime=true`, so every
-//! case below needs a provider before it can ask the library anything. The
-//! provider is named by `LIBUNIBREAK_TEST_PROVIDER`, an absolute path to a
-//! shared object exporting the eighteen functions and the `unibreak_version`
-//! object of the five public headers. A linked build links the library and has
-//! nothing to load, so [loadProvider] returns immediately there and every case
-//! is an ordinary direct call.
-//!
-//! Nothing is skipped when the variable is missing. In a runtime-loading build
-//! a case that cannot name a provider has nothing to test, and passing anyway
-//! would say nothing at all, so the run fails and says which variable to set.
+//! Unicode fixture conformance and wrapper-behavior tests for libunibreak.
 
 const std = @import("std");
 const libunibreak = @import("libunibreak");
 
-/// A shared object exporting the eighteen functions and the `unibreak_version`
-/// object of the five public headers.
+/// Environment variable naming the runtime test provider.
 const provider_variable = "LIBUNIBREAK_TEST_PROVIDER";
 
-/// A directory no machine has, which is what makes the open failure below a real
-/// one rather than a guess about what might be missing.
 const absent_provider = "/libunibreak-no-such-directory/libunibreak.so";
 
-/// What can be wrong with this file's own setup rather than with the library.
+/// Setup error when no runtime provider is configured.
 const Setup = error{MissingProvider};
 
-/// The provider this process is using, or null when none has loaded yet.
+/// Returns the provider source currently loaded by the process.
 fn inUse() ?[]const u8 {
     const source = libunibreak.loadedSource() orelse return null;
     return switch (source) {
@@ -82,16 +20,7 @@ fn inUse() ?[]const u8 {
     };
 }
 
-/// Load the configured provider, once, if this build needs one at all.
-///
-/// A linked build links `set_linebreaks*` and has nothing to load, so this
-/// returns immediately there and every case below is a direct call. A
-/// runtime-loading build has to be told, and the only two outcomes that mean
-/// anything are "a provider is in use" and "there is none"; the middle state is
-/// not a third thing a caller has to handle, so it reports the error instead.
-///
-/// The value is copied by the loader, which keeps its own copy for the life of
-/// the process, so the environment block it came from is released here.
+/// Loads a provider when runtime loading is enabled.
 fn loadProvider() (Setup || libunibreak.LoadError)!void {
     if (!libunibreak.runtime_loaded) return;
     if (inUse() != null) return;
@@ -116,17 +45,6 @@ fn loadProvider() (Setup || libunibreak.LoadError)!void {
     try libunibreak.load(.{ .path = value });
 }
 
-// ---------------------------------------------------------------------------
-// Which provider is in use
-//
-// These two cases are the loader's own lifecycle, and they sit above everything
-// else on purpose. The loader is process-global with no unload and no reset, so
-// "nothing has loaded yet" is a state this file is in exactly once; a case that
-// needed it again later could only be asserting about a state it could not
-// reach. In a linked build both are skipped, because there is no provider, no
-// table and nothing to resolve.
-// ---------------------------------------------------------------------------
-
 test "a request that names nothing is refused before the platform is called" {
     if (!libunibreak.runtime_loaded) return error.SkipZigTest;
     try std.testing.expect(inUse() == null);
@@ -134,7 +52,6 @@ test "a request that names nothing is refused before the platform is called" {
     try std.testing.expectError(error.EmptySource, libunibreak.load(.{ .path = "" }));
     try std.testing.expectError(error.EmptySource, libunibreak.load(.{ .system = "" }));
 
-    // Neither reached the platform, and neither published anything.
     try std.testing.expect(inUse() == null);
 }
 
@@ -142,14 +59,9 @@ test "a provider that cannot be opened publishes nothing, and the retry is the c
     if (!libunibreak.runtime_loaded) return error.SkipZigTest;
     try std.testing.expect(inUse() == null);
 
-    // A path under a directory no machine has. The attempt fails and, being a
-    // failure, leaves no table behind: there is no partial state to call
-    // through, and the next call still sees an unloaded module.
     try std.testing.expectError(error.OpenFailed, libunibreak.load(.{ .path = absent_provider }));
     try std.testing.expect(inUse() == null);
 
-    // Nothing retries by itself. This call is the retry, and it is the only way
-    // forward.
     try loadProvider();
     try std.testing.expect(inUse() != null);
 
@@ -168,39 +80,23 @@ const line_fixture = @embedFile("src/LineBreakTest.txt");
 const word_fixture = @embedFile("src/WordBreakTest.txt");
 const grapheme_fixture = @embedFile("src/GraphemeBreakTest.txt");
 
-/// The number of data rows in each fixture, as each file's own footer states it
-/// (`# Lines: 19338`, `# Lines: 1944`, `# Lines: 766`). The conformance tests
-/// assert they reached exactly these, so a row that failed to parse — and was
-/// therefore skipped — turns the test red instead of quietly reducing coverage.
+/// Expected data-row counts from the Unicode fixture footers.
 const expected_line_rows = 19338;
 const expected_word_rows = 1944;
 const expected_grapheme_rows = 766;
 
-/// The longest row in the three fixtures is 199 code points, which bounds every
-/// fixed buffer here. A longer row is a loud failure, never a truncation.
+/// Maximum code points in a fixture row.
 const max_row_code_points = 256;
 
 const TestError = libunibreak.Error || error{
     ConformanceFailure,
     FixtureRowTooLong,
     UnexpectedFixtureSyntax,
-    /// This is a runtime-loading build and no provider was named, so there is
-    /// nothing to call. See [loadProvider].
+    /// Runtime-loading tests need a configured provider.
     MissingProvider,
 };
 
-// ---------------------------------------------------------------------------
-// Fixture parsing
-// ---------------------------------------------------------------------------
-
-/// One parsed fixture row: its code points, and one marker per gap.
-///
-/// `marks[i]` is the marker **before** `points[i]`, and `marks[len]` is the
-/// trailing marker after the last code point. `marks[0]` is the marker the
-/// format puts before the very first code point; no entry of any output buffer
-/// reports a break there, so it is parsed and never compared — upstream's own
-/// harness writes it into position 0 and starts the library one position later
-/// (`src/tests.c:246-260`).
+/// Parsed code points and break markers; `marks[i]` precedes `points[i]`.
 const ParsedRow = struct {
     points: [max_row_code_points]u32,
     marks: [max_row_code_points + 1]bool,
@@ -211,12 +107,7 @@ fn isSpace(byte: u8) bool {
     return byte == ' ' or byte == '\t';
 }
 
-/// Whitespace-separated tokens of a fixture data segment.
-///
-/// Hand-rolled rather than taken from `std.mem` because the separator set is
-/// exactly space and TAB — every row contains one TAB, which separates the data
-/// from its `#` comment — and because a row containing an unexpected character
-/// has to be reported rather than quietly tokenised away.
+/// Iterates the space- and tab-separated tokens in a fixture row.
 const Tokens = struct {
     text: []const u8,
     at: usize = 0,
@@ -230,19 +121,14 @@ const Tokens = struct {
     }
 };
 
-/// The two break markers in the file's own UTF-8 bytes: `÷` is U+00F7 and `×` is
-/// U+00D7. `src/tests.c:206-220` matches the same two byte pairs.
+/// Maps the fixture's `÷` and `×` markers to break expectations.
 fn markerAllowsBreak(token: []const u8) ?bool {
     if (std.mem.eql(u8, token, "\xC3\xB7")) return true;
     if (std.mem.eql(u8, token, "\xC3\x97")) return false;
     return null;
 }
 
-/// Parses one whole fixture line into `row`.
-///
-/// The comment after `#` is dropped first, exactly as `src/tests.c:230-233`
-/// does. Anything the format does not allow is an error, so no row can be lost
-/// without the test failing.
+/// Parses one whole fixture row and rejects unsupported syntax.
 fn parseRow(line: []const u8) TestError!ParsedRow {
     const data = if (std.mem.indexOfScalar(u8, line, '#')) |at| line[0..at] else line;
 
@@ -264,12 +150,12 @@ fn parseRow(line: []const u8) TestError!ParsedRow {
             want_marker = true;
         }
     }
-    // A row ends with a marker and has at least two code points.
+    // Each row must end with a marker and contain at least two code points.
     if (want_marker or row.len < 2) return error.UnexpectedFixtureSyntax;
     return row;
 }
 
-/// A streaming walk over one fixture's data rows.
+/// Streams data rows from one fixture.
 const FixtureRows = struct {
     name: []const u8,
     text: []const u8,
@@ -289,8 +175,7 @@ const FixtureRows = struct {
         return null;
     }
 
-    /// Parses the next row, turning a parse failure into a named conformance
-    /// failure rather than a bare error the reader has to decode.
+    /// Converts parse errors into named conformance failures.
     fn nextParsed(self: *FixtureRows) TestError!?struct { number: usize, row: ParsedRow } {
         const entry = self.next() orelse return null;
         const row = parseRow(entry.text) catch |err| {
@@ -314,10 +199,6 @@ fn failOpcode(
     return error.ConformanceFailure;
 }
 
-// ---------------------------------------------------------------------------
-// Encoding a row into the three forms, and checking one pass back
-// ---------------------------------------------------------------------------
-
 fn utf8Width(value: u32) usize {
     if (value < 0x80) return 1;
     if (value < 0x800) return 2;
@@ -329,13 +210,8 @@ fn utf16Width(value: u32) usize {
     return if (value < 0x10000) 1 else 2;
 }
 
-/// The three encodings of one row, plus the code unit width of each code point
-/// in each of them.
-///
-/// The widths are what turns "the oracle expects no break before code point
-/// `i`" into "entry `i * width[i]` of this buffer must say so and the entries
-/// after it must say `insideChar`". Every buffer is filled in place, so a row is
-/// encoded once and never copied.
+/// Encoded fixture row and code-unit widths for all three encodings.
+/// Widths map code-point markers to their code-unit output positions.
 const Encoded = struct {
     utf8: [max_row_code_points * 4]u8,
     utf8_len: usize,
@@ -344,8 +220,7 @@ const Encoded = struct {
     utf32: [max_row_code_points]u32,
     widths_utf8: [max_row_code_points]usize,
     widths_utf16: [max_row_code_points]usize,
-    /// Every UTF-32 code point is one unit; kept as a buffer so the same check
-    /// serves all three encodings.
+    /// UTF-32 uses one code unit per code point.
     widths_utf32: [max_row_code_points]usize,
 };
 
@@ -391,15 +266,8 @@ fn encodeRow(row: ParsedRow, encoded: *Encoded) void {
     }
 }
 
-/// Checks a per-code-unit pass against one fixture row.
-///
-/// `widths[i]` is how many code units code point `i` occupies in the encoding
-/// this pass ran over, so the leading unit carries the opcode and every trailing
-/// unit must be `insideChar`.
-///
-/// `folds_allow_break` is the oracle-only concession for line breaking. It is
-/// `false` for word and grapheme, whose fixtures do express the difference, and
-/// `false` in every direct behaviour test in this file.
+/// Compares code-unit output with one fixture row using per-encoding widths.
+/// Line-fixture checks fold allowed and mandatory breaks; direct tests do not.
 fn checkPerCodeUnit(
     comptime O: type,
     fixture: []const u8,
@@ -437,7 +305,7 @@ fn checkPerCodeUnit(
     }
 }
 
-/// Checks a per-code-point line pass against one fixture row.
+/// Checks per-code-point line output against one fixture row.
 fn checkLineCodePoints(
     fixture: []const u8,
     observed: []const libunibreak.LineOpcode,
@@ -452,10 +320,6 @@ fn checkLineCodePoints(
         if (!accept) return failOpcode(fixture, line_number, index, "a break marker", @tagName(opcode));
     }
 }
-
-// ---------------------------------------------------------------------------
-// Conformance
-// ---------------------------------------------------------------------------
 
 test "line breaking: every row of LineBreakTest.txt, all three encodings and both per-code-point forms" {
     try loadProvider();
@@ -559,18 +423,9 @@ test "grapheme breaking: every row of GraphemeBreakTest.txt, all three encodings
     try std.testing.expectEqual(expected_grapheme_rows, reached);
 }
 
-// ---------------------------------------------------------------------------
-// Direct behaviour
-// ---------------------------------------------------------------------------
-
 test "the final position distinguishes an explicit break from an ordinary one" {
     try loadProvider();
-    // UAX #14 rules LB4, LB5 and LB6 make the break after a mandatory-break
-    // character mandatory, so text ending in one ends in `must_break`. Text that
-    // does not ends in `indeterminate`, which the Unicode oracle cannot express
-    // and which upstream's own harness folds away (`src/tests.c:266-273`). The
-    // typed API keeps them apart, so this test asserts both by name instead of
-    // folding.
+    // Final-position opcodes distinguish explicit breaks from ordinary ends.
     const with_break = [_]u32{ 0x0061, 0x0062, 0x000A };
     var explicit: [3]libunibreak.LineOpcode = undefined;
     try libunibreak.Line.perCodeUnit32(&with_break, null, &explicit);
@@ -581,8 +436,6 @@ test "the final position distinguishes an explicit break from an ordinary one" {
     try libunibreak.Line.perCodeUnit32(&without_break, null, &ordinary);
     try std.testing.expectEqual(libunibreak.LineOpcode.indeterminate, ordinary[1]);
 
-    // An `allow_break` at an interior position is a third thing again, and none
-    // of the three is interchangeable with the others.
     const spaced = [_]u32{ 0x0061, 0x0020, 0x0062 };
     var interior: [3]libunibreak.LineOpcode = undefined;
     try libunibreak.Line.perCodeUnit32(&spaced, null, &interior);
@@ -593,8 +446,7 @@ test "the final position distinguishes an explicit break from an ordinary one" {
 
 test "per-unit opcodes follow completed UTF-8 and UTF-16 code points" {
     try loadProvider();
-    // LB9 prohibits a break before the combining mark. Its final code unit
-    // carries the final indeterminate break, not an interior-unit marker.
+    // LB9 keeps the combining mark inside its base character.
     const utf8_text = "a\xCC\x81";
     var out8: [3]libunibreak.LineOpcode = undefined;
     try libunibreak.Line.perCodeUnit(utf8_text, null, &out8);
@@ -608,14 +460,11 @@ test "per-unit opcodes follow completed UTF-8 and UTF-16 code points" {
     try std.testing.expectEqual(libunibreak.LineOpcode.no_break, out16[0]);
     try std.testing.expectEqual(libunibreak.LineOpcode.indeterminate, out16[1]);
 
-    // In UTF-32 there is no continuation unit to mark, so `inside_char` cannot
-    // appear at all: the two units are the same thing here.
     const utf32_text = [_]u32{ 0x0061, 0x0301 };
     var out32: [2]libunibreak.LineOpcode = undefined;
     try libunibreak.Line.perCodeUnit32(&utf32_text, null, &out32);
     for (out32) |opcode| try std.testing.expect(opcode != .inside_char);
 
-    // A four-unit code point: U+1F600 GRINNING FACE after "a".
     const emoji_text = "a\xF0\x9F\x98\x80";
     var out_emoji: [5]libunibreak.LineOpcode = undefined;
     try libunibreak.Line.perCodeUnit(emoji_text, null, &out_emoji);
@@ -624,7 +473,6 @@ test "per-unit opcodes follow completed UTF-8 and UTF-16 code points" {
     }
     try std.testing.expectEqual(libunibreak.LineOpcode.indeterminate, out_emoji[4]);
 
-    // The same rule in the other two vocabularies.
     var word_out: [3]libunibreak.WordOpcode = undefined;
     try libunibreak.Word.perCodeUnit(utf8_text, &word_out);
     try std.testing.expectEqual(libunibreak.WordOpcode.inside_char, word_out[1]);
@@ -638,8 +486,7 @@ test "per-unit opcodes follow completed UTF-8 and UTF-16 code points" {
 
 test "empty input writes nothing at all" {
     try loadProvider();
-    // Native grapheme breaking indexes posNext - 1 even for empty input.
-    // Check the surrounding guard as well as the passed output region.
+    // Upstream indexes `posNext - 1` even for empty grapheme input.
     const untouched_line = [_]libunibreak.LineOpcode{.inside_char} ** 4;
 
     var line_out: [4]libunibreak.LineOpcode = undefined;
@@ -672,17 +519,13 @@ test "empty input writes nothing at all" {
     try libunibreak.Grapheme.perCodeUnit32(&.{}, grapheme_out[1..5]);
     try std.testing.expectEqualSlices(libunibreak.GraphemeOpcode, &untouched_grapheme, &grapheme_out);
 
-    // A zero-length input is not an overlap with anything, however the caller's
-    // two buffers are arranged.
+    // Empty input is not an overlap, regardless of buffer placement.
     try libunibreak.Line.perCodeUnit("", null, line_out[0..0]);
 }
 
 test "the per-code-point pass writes one entry per code point and leaves the tail alone" {
     try loadProvider();
-    // The bound is the code point count, not the code unit count: three UTF-8
-    // bytes here, two code points, two entries. Upstream never computes that
-    // count for the caller — its own harness over-allocates to the input length
-    // (`src/tests.c:188-190`) — which is the buffer problem this facade closes.
+    // Capacity is the code-point count, not the UTF-8 byte length.
     const text = "a\xCC\x81";
 
     var out: [4]libunibreak.LineOpcode = undefined;
@@ -691,7 +534,7 @@ test "the per-code-point pass writes one entry per code point and leaves the tai
     try std.testing.expectEqual(@as(usize, 2), count);
     try std.testing.expectEqual(libunibreak.LineOpcode.no_break, out[0]);
     try std.testing.expectEqual(libunibreak.LineOpcode.indeterminate, out[1]);
-    // Entries past the returned count are residue and keep the caller's values.
+    // Entries beyond the returned count remain unchanged.
     try std.testing.expectEqual(libunibreak.LineOpcode.inside_char, out[2]);
     try std.testing.expectEqual(libunibreak.LineOpcode.inside_char, out[3]);
 
@@ -702,7 +545,6 @@ test "the per-code-point pass writes one entry per code point and leaves the tai
     try std.testing.expectEqual(@as(usize, 2), count16);
     try std.testing.expectEqualSlices(libunibreak.LineOpcode, out[0..2], out16[0..2]);
 
-    // One entry is too small; a spare third entry must remain untouched.
     var tight: [3]libunibreak.LineOpcode = undefined;
     @memset(&tight, libunibreak.LineOpcode.inside_char);
     try std.testing.expectError(error.OutputTooSmall, libunibreak.Line.perCodePoint(text, null, tight[0..1]));
@@ -713,16 +555,8 @@ test "the per-code-point pass writes one entry per code point and leaves the tai
 
 test "language tailoring is line breaking's alone, matched by prefix" {
     try loadProvider();
-    // U+3041 HIRAGANA LETTER SMALL A has line break class CJ. `resolve_lb_class`
-    // (`src/linebreak.c:678-682`) resolves CJ to NS under `-strict` and to ID
-    // otherwise. The pair table then gives `AL × NS` no break
-    // (`baTable[AL][NS] = IND_BRK` with no preceding space, `:209-216`) but
-    // `AL × ID` a direct one (`DIR_BRK`). U+2757 HEAVY EXCLAMATION MARK SYMBOL is
-    // AI, which resolves to AL for any language that is not zh, ja or ko.
-    //
-    // The strict half of this is the published expectation:
-    // `LineBreakTest.txt` line 279, `× 2757 × 3041 ÷`, which upstream's harness
-    // replays with `lang = "-strict"`.
+    // Under `-strict`, CJ resolves to NS and suppresses the break; otherwise it resolves to ID.
+    // The strict expectation is fixture line 279.
     const text = [_]u32{ 0x2757, 0x3041 };
 
     var untailored: [2]libunibreak.LineOpcode = undefined;
@@ -733,12 +567,7 @@ test "language tailoring is line breaking's alone, matched by prefix" {
     try libunibreak.Line.perCodeUnit32(&text, "-strict", &strict);
     try std.testing.expectEqual(libunibreak.LineOpcode.no_break, strict[0]);
 
-    // Matching is by two-byte prefix (`src/linebreakdef.c:120-128` with
-    // `strncmp` at `src/linebreak.c:566`), so a region tag whose prefix is a
-    // known language tailors identically to the bare language, and an arbitrary
-    // string that happens to start the same way does too. No tailoring is `null`
-    // and `""` alike: `is_lang_cjk`, `ends_with` and the map walk all read a
-    // two-byte prefix, which an empty string never matches.
+    // Language tags match two-byte prefixes; `null` and `""` disable tailoring.
     const probe = [_]u32{ 0x0041, 0x0020, 0x2018, 0x0042 };
     var bare: [4]libunibreak.LineOpcode = undefined;
     var region: [4]libunibreak.LineOpcode = undefined;
@@ -757,10 +586,7 @@ test "language tailoring is line breaking's alone, matched by prefix" {
 
 test "the pair query agrees with the full pass on a two-character string" {
     try loadProvider();
-    // `is_line_breakable` returns `brks[0]` of a two-code-point run
-    // (`src/linebreak.c:1656-1667`), so it must equal the first entry a
-    // per-code-unit UTF-32 pass produces for the same pair. Rule LB7 forbids a
-    // break before a space, so the answer for "A" then " " is `no_break`.
+    // The pair query matches the first full-pass opcode for the same pair.
     const pair = [_]u32{ 0x0041, 0x0020 };
 
     var pass: [2]libunibreak.LineOpcode = undefined;
@@ -770,23 +596,15 @@ test "the pair query agrees with the full pass on a two-character string" {
     try std.testing.expectEqual(pass[0], queried);
     try std.testing.expectEqual(libunibreak.LineOpcode.no_break, queried);
 
-    // The final position of that run is indeterminate, which the pair query does
-    // not report and the pass does.
     try std.testing.expectEqual(libunibreak.LineOpcode.indeterminate, pass[1]);
 
-    // A surrogate is not a code point and a value above U+10FFFF is not
-    // either; neither is handed to a decoder that would accept it.
     try std.testing.expectError(error.MalformedUtf32, libunibreak.Line.breakBetween(0xD800, 0x0041, null));
     try std.testing.expectError(error.MalformedUtf32, libunibreak.Line.breakBetween(0x0041, 0x110000, null));
 }
 
 test "word and grapheme breaking answer different questions about the same text" {
     try loadProvider();
-    // "1,0". `WordBreakTest.txt` line 1729 publishes `÷ 0031 × 002C × 0030 ÷`,
-    // so a word boundary appears neither at the comma nor at the zero (rules
-    // WB11 and WB12). Grapheme breaking has no notion of a word: UAX #29 rule
-    // GB999 puts a boundary at every one of these positions. One input, two
-    // vocabularies, two published answers, three different enum types.
+    // The comma stays inside a word; grapheme breaking uses a different vocabulary.
     const text = [_]u32{ 0x0031, 0x002C, 0x0030 };
 
     var word_out: [3]libunibreak.WordOpcode = undefined;
@@ -802,10 +620,6 @@ test "word and grapheme breaking answer different questions about the same text"
     }
 }
 
-// ---------------------------------------------------------------------------
-// The refusals. Each one is checked to arrive before any output byte is written.
-// ---------------------------------------------------------------------------
-
 test "an output buffer one entry short is refused, and nothing is written" {
     try loadProvider();
     const text = "abcd";
@@ -816,8 +630,7 @@ test "an output buffer one entry short is refused, and nothing is written" {
     try std.testing.expectEqualSlices(libunibreak.LineOpcode, &[_]libunibreak.LineOpcode{.must_break} ** 4, &out);
     try libunibreak.Line.perCodeUnit(text, null, &out);
 
-    // The same bound applies in every encoding and to every vocabulary: three
-    // UTF-16 code units are three entries, not two.
+    // Capacity is measured in UTF-16 code units.
     const units = [_]u16{ 0x0061, 0x0062, 0x0063 };
     var out16: [3]libunibreak.WordOpcode = undefined;
     @memset(&out16, libunibreak.WordOpcode.no_break);
@@ -829,9 +642,7 @@ test "an output buffer one entry short is refused, and nothing is written" {
     try std.testing.expectError(error.OutputTooSmall, libunibreak.Grapheme.perCodeUnit32(&[_]u32{ 0x0061, 0x0062, 0x0063 }, &out32));
     try std.testing.expectEqualSlices(libunibreak.GraphemeOpcode, &[_]libunibreak.GraphemeOpcode{.no_break} ** 2, &out32);
 
-    // A per-code-point pass needs the code point count, which for three UTF-8
-    // bytes of two code points is two, and for a surrogate pair plus a letter is
-    // two as well.
+    // Per-code-point output needs two entries for either sample.
     var points: [2]libunibreak.LineOpcode = undefined;
     try std.testing.expectError(error.OutputTooSmall, libunibreak.Line.perCodePoint("a\xCC\x81", null, points[0..1]));
     const paired: [3]u16 = .{ 0xD83D, 0xDE00, 0x0061 };
@@ -841,32 +652,26 @@ test "an output buffer one entry short is refused, and nothing is written" {
 
 test "an output buffer that shares storage with the input is refused" {
     try loadProvider();
-    // One buffer, viewed twice: the text is "abcd" in the first four bytes and
-    // the opcodes are the next four. Writing an opcode would overwrite a code
-    // unit the native pass has not read yet, so the call is refused rather than
-    // executed in either order.
+    // Reject output that overlaps unread input bytes.
     var storage: [8]u8 = "abcdXXXX".*;
     const text: []const u8 = storage[0..4];
     const out: []libunibreak.LineOpcode = @as([*]libunibreak.LineOpcode, @ptrCast(storage[2..6].ptr))[0..4];
     try std.testing.expectError(error.InputOutputOverlap, libunibreak.Line.perCodeUnit(text, null, out));
     try std.testing.expectEqualStrings("abcdXXXX", &storage);
 
-    // Byte ranges that only touch do not overlap: the output starting exactly
-    // where the input ends is accepted, and the input really is read.
+    // Touching byte ranges do not overlap.
     var separate: [8]u8 = "abcdYYYY".*;
     const touching: []libunibreak.LineOpcode = @as([*]libunibreak.LineOpcode, @ptrCast(separate[4..8].ptr))[0..4];
     try libunibreak.Line.perCodeUnit(separate[0..4], null, touching);
     try std.testing.expectEqualStrings("abcd", separate[0..4]);
 
-    // The same rule with different code unit widths on the two sides: two UTF-16
-    // code units are four bytes, so an output buffer inside them overlaps.
+    // Overlap checks use byte widths across different code-unit types.
     var wide: [8]u8 align(2) = undefined;
     @memset(&wide, 0);
     const wide_text: []const u16 = @as([*]const u16, @ptrCast(&wide))[0..2];
     const wide_out: []libunibreak.LineOpcode = @as([*]libunibreak.LineOpcode, @ptrCast(wide[1..3].ptr))[0..2];
     try std.testing.expectError(error.InputOutputOverlap, libunibreak.Line.perCodeUnit16(wide_text, null, wide_out));
 
-    // And in the other two vocabularies.
     var shared = [_]u8{ 'a', 'b', 0, 0 };
     const shared_text: []const u8 = shared[0..];
     const shared_out: []libunibreak.WordOpcode = @as([*]libunibreak.WordOpcode, @ptrCast(shared[0..2].ptr))[0..2];
@@ -876,25 +681,15 @@ test "an output buffer that shares storage with the input is refused" {
 test "malformed UTF-8 is refused in every shape, and nothing is written" {
     try loadProvider();
     const cases = [_]struct { name: []const u8, bytes: []const u8 }{
-        // A continuation byte in lead position.
         .{ .name = "lone continuation byte", .bytes = "\x80" },
-        // The overlong two-byte leads 0xC0 and 0xC1.
         .{ .name = "overlong NUL", .bytes = "\xC0\x80" },
-        // A lead byte above the encodable range.
         .{ .name = "lead above F4", .bytes = "\xF5\x80\x80\x80" },
-        // A two-byte sequence cut short by the end of input.
         .{ .name = "truncated two-byte", .bytes = "\xC2" },
-        // A three-byte sequence with a non-continuation in the middle.
         .{ .name = "bad continuation", .bytes = "\xE0\x41\x80" },
-        // A three-byte sequence cut short.
         .{ .name = "truncated three-byte", .bytes = "\xE0\xA0" },
-        // The overlong three-byte encoding of U+0000.
         .{ .name = "overlong three-byte", .bytes = "\xE0\x80\x80" },
-        // U+D800 encoded, which no scalar value may be.
         .{ .name = "encoded surrogate", .bytes = "\xED\xA0\x80" },
-        // U+110000, one past the last scalar value.
         .{ .name = "above U+10FFFF", .bytes = "\xF4\x90\x80\x80" },
-        // A four-byte sequence cut short.
         .{ .name = "truncated four-byte", .bytes = "\xF0\x9F\x98" },
     };
 
@@ -910,8 +705,7 @@ test "malformed UTF-8 is refused in every shape, and nothing is written" {
                 return err;
             }
         };
-        // The buffer still holds the caller's values, so the refusal arrived
-        // before any write.
+        // Rejection occurs before the output is modified.
         try std.testing.expectEqualSlices(libunibreak.LineOpcode, &clean, &out);
 
         var word_out: [8]libunibreak.WordOpcode = undefined;
@@ -925,8 +719,7 @@ test "malformed UTF-8 is refused in every shape, and nothing is written" {
         try std.testing.expectError(error.MalformedUtf8, libunibreak.Line.perCodePoint(case.bytes, null, &point_out));
     }
 
-    // A well-formed sequence of every length is accepted, so the refusals above
-    // are about encoding and not about size.
+    // Valid sequences of each UTF-8 width remain accepted.
     var out: [10]libunibreak.LineOpcode = undefined;
     try libunibreak.Line.perCodeUnit("a\xC2\xA9\xE2\x82\xAC\xF0\x9F\x98\x80", null, &out);
 }
@@ -934,11 +727,11 @@ test "malformed UTF-8 is refused in every shape, and nothing is written" {
 test "malformed UTF-16 is refused in every shape, and nothing is written" {
     try loadProvider();
     const cases = [_][]const u16{
-        // A high surrogate with nothing behind it.
+        // Trailing high surrogate.
         &[_]u16{ 0x0061, 0xD800 },
-        // A high surrogate followed by something that is not a low surrogate.
+        // High surrogate followed by a non-low surrogate.
         &[_]u16{ 0xD800, 0x0041 },
-        // A low surrogate with no high surrogate in front of it.
+        // Unpaired low surrogate.
         &[_]u16{ 0xDC00, 0x0061 },
     };
 
@@ -960,8 +753,7 @@ test "malformed UTF-16 is refused in every shape, and nothing is written" {
         try std.testing.expectError(error.MalformedUtf16, libunibreak.Line.perCodePoint16(case, null, &point_out));
     }
 
-    // A well-formed surrogate pair is two code units and one code point, so
-    // "a" followed by U+1F600 is two entries, not three.
+    // A surrogate pair uses two UTF-16 units but one code point.
     const paired = [_]u16{ 0x0061, 0xD83D, 0xDE00 };
     var out: [4]libunibreak.LineOpcode = undefined;
     const count = try libunibreak.Line.perCodePoint16(&paired, null, &out);
@@ -973,15 +765,12 @@ test "malformed UTF-32 is refused in every shape, and nothing is written" {
     const clean = [_]libunibreak.LineOpcode{.must_break} ** 4;
     var out: [4]libunibreak.LineOpcode = undefined;
 
-    // A surrogate is not a scalar value.
     @memcpy(&out, &clean);
     try std.testing.expectError(error.MalformedUtf32, libunibreak.Line.perCodeUnit32(&[_]u32{ 0x0061, 0xD800 }, null, &out));
     try std.testing.expectEqualSlices(libunibreak.LineOpcode, &clean, &out);
 
-    // One past the last scalar value.
     try std.testing.expectError(error.MalformedUtf32, libunibreak.Line.perCodeUnit32(&[_]u32{ 0x0061, 0x110000 }, null, &out));
 
-    // The largest legal value is accepted.
     try libunibreak.Line.perCodeUnit32(&[_]u32{ 0x0061, 0x10FFFF }, null, &out);
 
     var word_out: [4]libunibreak.WordOpcode = undefined;
@@ -990,17 +779,11 @@ test "malformed UTF-32 is refused in every shape, and nothing is written" {
     try std.testing.expectError(error.MalformedUtf32, libunibreak.Grapheme.perCodeUnit32(&[_]u32{0xD800}, &grapheme_out));
 }
 
-// ---------------------------------------------------------------------------
-// The code-point cursor
-// ---------------------------------------------------------------------------
-
 test "the cursor advances one code point at a time and stops without moving" {
     try loadProvider();
-    // "a", U+0301, U+1F600: one, two and four UTF-8 bytes, so seven code units
-    // for three code points.
+    // The sequence uses seven UTF-8 bytes for three code points.
     const text = "a\xCC\x81\xF0\x9F\x98\x80";
     const points = [_]u32{ 0x0061, 0x0301, 0x1F600 };
-    // Where each code point ends, in bytes: after one, after three, after seven.
     const ends = [_]usize{ 1, 3, 7 };
 
     var at: usize = 0;
@@ -1008,22 +791,17 @@ test "the cursor advances one code point at a time and stops without moving" {
         const step = try libunibreak.Decode.utf8(text, at);
         try std.testing.expect(!step.end);
         try std.testing.expectEqual(expected, step.code_point);
-        // The unit widths are what the break passes write one entry per, so the
-        // cursor and a per-code-unit pass must agree on where each code point is.
+        // Decoder offsets must match code-unit break positions.
         try std.testing.expectEqual(ends[unit], step.index);
         at = step.index;
     }
     try std.testing.expectEqual(text.len, at);
 
-    // At the end the decoder answers EOS and leaves the index alone, so a loop
-    // that stops on `end` cannot spin.
     const past = try libunibreak.Decode.utf8(text, at);
     try std.testing.expect(past.end);
     try std.testing.expectEqual(at, past.index);
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0), past.code_point);
 
-    // An index past the end is refused. `src/unibreakdef.c:59` only asserts it,
-    // and that assert is gone in the two release optimize modes.
     try std.testing.expectError(error.IndexPastEnd, libunibreak.Decode.utf8(text, text.len + 1));
     try std.testing.expectError(error.IndexPastEnd, libunibreak.Decode.utf16(&.{}, 1));
     try std.testing.expectError(error.IndexPastEnd, libunibreak.Decode.utf32(&.{}, 1));
@@ -1031,41 +809,31 @@ test "the cursor advances one code point at a time and stops without moving" {
 
 test "a truncated sequence ends the cursor rather than reporting a character" {
     try loadProvider();
-    // The two-byte sequence for U+00E9 with its second byte missing.
     const truncated = "\xC2";
     const step = try libunibreak.Decode.utf8(truncated, 0);
     try std.testing.expect(step.end);
-    // `src/unibreakdef.c:73-76` returns EOS without advancing, so the caller
-    // learns that the input ended mid-sequence and not that a character was read.
     try std.testing.expectEqual(@as(usize, 0), step.index);
 
-    // The same in UTF-16: a high surrogate with nothing behind it is
-    // `src/unibreakdef.c:138-142`, which rewinds the index it had already
-    // advanced and answers EOS.
+    // A trailing high surrogate reports end without advancing.
     const lone_surrogate = [_]u16{0xD83D};
     const step16 = try libunibreak.Decode.utf16(&lone_surrogate, 0);
     try std.testing.expect(step16.end);
     try std.testing.expectEqual(@as(usize, 0), step16.index);
 
-    // A high surrogate followed by something that is not a low surrogate is not
-    // truncated: upstream returns the surrogate value itself and advances one
-    // unit (`src/unibreakdef.c:143-146`), and the cursor reports exactly that
-    // rather than substituting an error the native call never made.
+    // A nontrailing high surrogate is returned as a value by upstream.
     const unpaired = [_]u16{ 0xD83D, 0x0041 };
     const step_unpaired = try libunibreak.Decode.utf16(&unpaired, 0);
     try std.testing.expect(!step_unpaired.end);
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0xD83D), step_unpaired.code_point);
     try std.testing.expectEqual(@as(usize, 1), step_unpaired.index);
 
-    // A well-formed pair is one code point over two units.
+    // A valid surrogate pair decodes as one code point.
     const pair = [_]u16{ 0xD83D, 0xDE00 };
     const step_pair = try libunibreak.Decode.utf16(&pair, 0);
     try std.testing.expect(!step_pair.end);
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0x1F600), step_pair.code_point);
     try std.testing.expectEqual(@as(usize, 2), step_pair.index);
 
-    // And a UTF-32 pass never invents a surrogate pair, because a unit is a
-    // code point there.
     const single = [_]u32{0x1F600};
     const step32 = try libunibreak.Decode.utf32(&single, 0);
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0x1F600), step32.code_point);
@@ -1074,11 +842,8 @@ test "a truncated sequence ends the cursor rather than reporting a character" {
 
 test "a UTF-32 unit holding U+FFFFFFFF is a character, not the end of the input" {
     try loadProvider();
-    // `0xFFFFFFFF` is `EOS` (`src/unibreakdef.h:52`) and also a `utf32_t` a
-    // buffer may hold: `ub_get_next_char_utf32` returns the stored unit
-    // verbatim (`src/unibreakdef.c:172`). Upstream tells the two apart by the
-    // index alone — it answers `EOS` without advancing and returns a stored
-    // unit by advancing one (`:167-172`) — so the cursor does too.
+    // `0xFFFFFFFF` is both `EOS` and a valid UTF-32 unit; the decoder distinguishes them by index.
+    // Stored values advance the index; end-of-input leaves it unchanged.
     const units = [_]u32{ 0x0061, 0xFFFFFFFF, 0x0062 };
 
     const sentinel = try libunibreak.Decode.utf32(&units, 1);
@@ -1086,27 +851,20 @@ test "a UTF-32 unit holding U+FFFFFFFF is a character, not the end of the input"
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0xFFFFFFFF), sentinel.code_point);
     try std.testing.expectEqual(@as(usize, 2), sentinel.index);
 
-    // The unit behind it is still reachable, which is what a walk that stops on
-    // `end` depends on.
     const after = try libunibreak.Decode.utf32(&units, sentinel.index);
     try std.testing.expect(!after.end);
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0x0062), after.code_point);
     try std.testing.expectEqual(@as(usize, 3), after.index);
 
-    // The real end of the range is the only thing that ends the cursor, and it
-    // leaves the index it was given, unchanged.
     const past = try libunibreak.Decode.utf32(&units, units.len);
     try std.testing.expect(past.end);
     try std.testing.expectEqual(@as(usize, 3), past.index);
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0), past.code_point);
 
-    // An empty buffer has nothing to return, so it ends at once.
     const empty = try libunibreak.Decode.utf32(&[_]u32{}, 0);
     try std.testing.expect(empty.end);
     try std.testing.expectEqual(@as(usize, 0), empty.index);
 
-    // The whole buffer, walked the way a caller walks one. The index strictly
-    // increases and the walk stops at the true end.
     var at: usize = 0;
     var reached: usize = 0;
     while (true) {
@@ -1119,16 +877,12 @@ test "a UTF-32 unit holding U+FFFFFFFF is a character, not the end of the input"
     try std.testing.expectEqual(@as(usize, 3), reached);
     try std.testing.expectEqual(@as(usize, 3), at);
 
-    // A surrogate is the other value the same rule covers: it is above
-    // `U+10FFFF` and comes back as itself rather than as an end.
     const surrogate = try libunibreak.Decode.utf32(&[_]u32{ 0x0061, 0xD800, 0x0062 }, 1);
     try std.testing.expect(!surrogate.end);
     try std.testing.expectEqual(@as(libunibreak.CodePoint, 0xD800), surrogate.code_point);
     try std.testing.expectEqual(@as(usize, 2), surrogate.index);
 
-    // The break passes keep the other half of the convention: they refuse the
-    // same values rather than decoding them, which is the one place the two
-    // halves of this file deliberately disagree.
+    // Break passes reject non-scalars that `Decode` returns verbatim.
     var out: [3]libunibreak.LineOpcode = undefined;
     try std.testing.expectError(error.MalformedUtf32, libunibreak.Line.perCodeUnit32(&units, null, &out));
     try std.testing.expectError(error.MalformedUtf32, libunibreak.Line.breakBetween(0x0061, 0xFFFFFFFF, null));

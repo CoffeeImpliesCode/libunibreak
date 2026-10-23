@@ -1,13 +1,4 @@
-# nix build .#static / .#shared
-#
-# Both variants are the one package.nix; the variants live here, not inside it.
-# `default` is static, which is this SDK's native linkage policy.
-#
-# The dev shell holds tools. Putting the SDK package in it would mean building
-# the library to enter the shell. `devenv shell` is the canonical way to work in
-# this repository.
-#
-# flake.lock is the driver's; this file pins the revision it wants.
+# Static/shared derivations and the development shell.
 
 {
   description = "libunibreak: Unicode line, word and grapheme breaking (UAX #14, UAX #29)";
@@ -44,8 +35,7 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          # Asserted, not assumed: build.zig.zon declares
-          # .minimum_zig_version = "0.16.0".
+          # Require the Zig version declared by the package manifest.
           packages = [
             (
               assert pkgs.zig_0_16.version == "0.16.0";
