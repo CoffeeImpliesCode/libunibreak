@@ -30,12 +30,10 @@ A compile-only or build-only result does not establish runtime support on that t
 
 ## Consumption
 
-Add the local package to `build.zig.zon`:
+Fetch the GitHub dependency into `build.zig.zon`:
 
-```zig
-.dependencies = .{
-    .libunibreak = .{ .path = "../libunibreak" },
-},
+```sh
+zig fetch --save git+https://github.com/CoffeeImpliesCode/libunibreak#v8.0.0
 ```
 
 Import the `libunibreak` module; the dependency supplies the facade, translated headers and native library:
